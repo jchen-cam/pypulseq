@@ -50,6 +50,7 @@ def read(self, path: str, detect_rf_use: bool | None = None, remove_duplicates: 
     self.label_inc_library = EventLibrary()
     self.label_set_library = EventLibrary()
     self.rf_library = EventLibrary()
+    self.rf_shim_library = EventLibrary()
     self.shape_library = EventLibrary()
     self.trigger_library = EventLibrary()
 
@@ -228,6 +229,17 @@ def read(self, path: str, detect_rf_use: bool | None = None, remove_duplicates: 
                     return labels.index(s) + 1
 
                 self.label_inc_library = __read_and_parse_events(input_file, l1, l2)
+            elif section.startswith('extension RF_SHIMS '):
+                self.set_extension_string_ID('RF_SHIMS', int(section.split()[-1]))
+                line = __strip_line(input_file)
+                while line not in ('', '#', -1):
+                    fields = line.split()
+                    event_id, n_channels = int(fields[0]), int(fields[1])
+                    data = tuple(float(value) for value in fields[2:])
+                    if n_channels < 1 or len(data) != 2 * n_channels:
+                        raise ValueError('Invalid RF_SHIMS channel count.')
+                    self.rf_shim_library.insert(event_id, data)
+                    line = __strip_line(input_file)
             elif section[:16] == 'extension DELAYS':
                 extension_id = int(section[16:])
                 self.set_extension_string_ID('DELAYS', extension_id)

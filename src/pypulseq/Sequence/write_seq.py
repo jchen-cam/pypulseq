@@ -11,6 +11,17 @@ from pypulseq.supported_labels_rf_use import get_supported_labels, get_supported
 version_major, version_minor, version_revision = __version__.split('.')[:3]
 
 
+def _write_rf_shims(self, output_file):
+    if self.rf_shim_library.data:
+        output_file.write('# Extension specification for RF shimming:\n')
+        output_file.write('# id num_chan magn_c1 phase_c1 magn_c2 phase_c2 ... (phases in rad)\n')
+        output_file.write(f'extension RF_SHIMS {self.get_extension_type_ID("RF_SHIMS")}\n')
+        for event_id, data in self.rf_shim_library.data.items():
+            output_file.write(f'{event_id} {len(data) // 2}')
+            output_file.write(''.join(f' {value:.9g}' for value in data) + '\n')
+        output_file.write('\n')
+
+
 def write(self, file_name: str | Path, create_signature, remove_duplicates=True) -> str | None:
     """
     Write the sequence data to the given filename using the open file format for MR sequences.
@@ -194,6 +205,8 @@ def write(self, file_name: str | Path, create_signature, remove_duplicates=True)
                 s = id_format_str.format(k, *np.round(self.trigger_library.data[k] * np.array([1, 1, 1e6, 1e6])))
                 output_file.write(s)
             output_file.write('\n')
+
+        _write_rf_shims(self, output_file)
 
         if len(self.label_set_library.data) != 0:
             labels = get_supported_labels()
@@ -464,6 +477,8 @@ def write_v141(self, file_name: str | Path, create_signature, remove_duplicates=
                 s = id_format_str.format(k, *np.round(self.trigger_library.data[k] * np.array([1, 1, 1e6, 1e6])))
                 output_file.write(s)
             output_file.write('\n')
+
+        _write_rf_shims(self, output_file)
 
         if len(self.label_set_library.data) != 0:
             labels = get_supported_labels()

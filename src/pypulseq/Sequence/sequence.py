@@ -67,6 +67,7 @@ class Sequence:
         self.label_inc_library = EventLibrary()
         self.label_set_library = EventLibrary()
         self.rf_library = EventLibrary()
+        self.rf_shim_library = EventLibrary()
         self.shape_library = EventLibrary(numpy_data=True)
         self.trigger_library = EventLibrary()
         self.soft_delay_library = EventLibrary()
@@ -1328,6 +1329,9 @@ class Sequence:
 
     def register_rf_event(self, event: SimpleNamespace) -> tuple[int, list[int]]:
         return block.register_rf_event(self, event)
+
+    def register_rf_shim_event(self, event: SimpleNamespace) -> int:
+        return block.register_rf_shim_event(self, event)
 
     def register_soft_delay_event(self, event: SimpleNamespace) -> int:
         return block.register_soft_delay_event(self, event)

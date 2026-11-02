@@ -56,6 +56,7 @@ def set_block(self, block_index: int, *args: SimpleNamespace | float) -> None:
         2: SimpleNamespace(start=(0, 0), stop=(0, 0)),
     }  # Key-value mapping of index and  pairs of gradients/times
     extensions = []
+    rf_shim_count = 0
 
     for event in events:
         if not isinstance(event, numbers.Real):  # If event is not a block duration
@@ -155,6 +156,12 @@ def set_block(self, block_index: int, *args: SimpleNamespace | float) -> None:
                     'ref': label_id,
                 }
                 extensions.append(ext)
+            elif event.type == 'rf_shim':
+                rf_shim_count += 1
+                if rf_shim_count > 1:
+                    raise ValueError('Only one RF_SHIMS event is allowed per block.')
+                event_id = event.id if hasattr(event, 'id') else register_rf_shim_event(self, event)
+                extensions.append({'type': self.get_extension_type_ID('RF_SHIMS'), 'ref': event_id})
             elif event.type == 'soft_delay':
                 if hasattr(event, 'id'):
                     event_id = event.id
@@ -169,6 +176,9 @@ def set_block(self, block_index: int, *args: SimpleNamespace | float) -> None:
         else:
             # Delay given as floating number (internal use only, e.g., from get_block())
             duration = max(duration, event)
+
+    if rf_shim_count and new_block[1] == 0:
+        raise ValueError('RF_SHIMS requires an RF event in the same block.')
 
     # =========
     # ADD EXTENSIONS
@@ -300,7 +310,7 @@ def get_block(self, block_index: int, add_IDs: bool = False) -> SimpleNamespace:
         return self.block_cache[block_index]
 
     block = SimpleNamespace()
-    attrs = ['block_duration', 'rf', 'gx', 'gy', 'gz', 'adc', 'label', 'soft_delay']
+    attrs = ['block_duration', 'rf', 'gx', 'gy', 'gz', 'adc', 'label', 'soft_delay', 'rf_shim']
     values = [None] * len(attrs)
     for att, val in zip(attrs, values, strict=True):
         setattr(block, att, val)
@@ -365,6 +375,16 @@ def get_block(self, block_index: int, add_IDs: bool = False) -> SimpleNamespace:
         if block.label is not None:
             block.label = dict(enumerate(reversed(block.label.values())))
 
+        # RF_SHIMS phases are in radians, as in the MATLAB writer.
+        shim_ext = raw_block.ext[1, raw_block.ext[0] == self.get_extension_type_ID('RF_SHIMS', update=False)]
+        if shim_ext.size:
+            if shim_ext.size > 1:
+                raise ValueError('Only one RF_SHIMS event is allowed per block.')
+            data = np.asarray(self.rf_shim_library.data[shim_ext.item()])
+            block.rf_shim = SimpleNamespace(type='rf_shim', shim_vector=data[::2] * np.exp(1j * data[1::2]))
+            if add_IDs:
+                block.rf_shim.id = shim_ext.item()
+
         # Unpack Soft Delays
         delay_ext = raw_block.ext[:, raw_block.ext[0] == self.get_extension_type_ID('DELAYS', update=False)]
         if delay_ext.shape[-1] > 0:
@@ -389,6 +409,7 @@ def get_block(self, block_index: int, add_IDs: bool = False) -> SimpleNamespace:
                     and ext_id != self.get_extension_type_ID('LABELSET', update=False)
                     and ext_id != self.get_extension_type_ID('LABELINC', update=False)
                     and ext_id != self.get_extension_type_ID('DELAYS', update=False)
+                    and ext_id != self.get_extension_type_ID('RF_SHIMS', update=False)
                 ):
                     warnings.warn(f'Unknown extension ID {ext_id}')
 
@@ -762,6 +783,15 @@ def register_soft_delay_event(self, event: SimpleNamespace) -> int:
     if self.use_block_cache and found:
         self.block_cache.clear()
     return soft_delay_id
+
+
+def register_rf_shim_event(self, event: SimpleNamespace) -> int:
+    """Register interleaved RF-shim magnitudes and phases in radians."""
+    data = np.column_stack((np.abs(event.shim_vector), np.angle(event.shim_vector))).ravel()
+    event_id, found = self.rf_shim_library.find_or_insert(tuple(data))
+    if self.use_block_cache and found:
+        self.block_cache.clear()
+    return event_id
 
 
 def register_rf_event(self, event: SimpleNamespace) -> tuple[int, list[int]]:
